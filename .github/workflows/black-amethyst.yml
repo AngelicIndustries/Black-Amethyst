@@ -172,6 +172,10 @@ jobs:
       # 5. Apply the rebrand + offline-account patches (fails loud if a
       #    heuristic no longer matches upstream source).
       # ---------------------------------------------------------------
+      - name: Test Black-Amethyst patches
+        if: steps.decide.outputs.build_needed == 'true'
+        run: python3 ci/scripts/test_patch.py src
+
       - name: Apply Black-Amethyst patches
         if: steps.decide.outputs.build_needed == 'true'
         run: python3 ci/scripts/patch.py src
@@ -256,8 +260,16 @@ jobs:
       # ---------------------------------------------------------------
       # 7. Publish the release on this repo.
       # ---------------------------------------------------------------
-      - name: Publish Black-Amethyst release
+      - name: Upload APK for testing
         if: steps.decide.outputs.build_needed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Black-Amethyst-${{ steps.decide.outputs.upstream_tag }}-${{ github.run_id }}
+          path: ${{ steps.apk.outputs.apk_path }}
+          if-no-files-found: error
+
+      - name: Publish Black-Amethyst release
+        if: steps.decide.outputs.build_needed == 'true' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           UP="${{ steps.decide.outputs.upstream_tag }}"
