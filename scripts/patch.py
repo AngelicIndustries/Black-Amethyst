@@ -128,6 +128,44 @@ def main():
         raise PatchError("LocalLoginFragment still guards on !hasOnlineProfile() after patch")
     write(llf_path, llf)
 
+    # Profile creation has its own online-account gates, independent of login.
+    # All modded profile buttons (including LWJGL3ify) share tryInstall(). The
+    # modpack browser repeats the same gate after the profile-type screen.
+    # Installation does not need account credentials; launch still checks for
+    # a selected account and retains upstream's demo-account restrictions.
+    for fragment in ("ProfileTypeSelectFragment", "ModpackCreateFragment"):
+        path = os.path.join(app, f"src/main/java/net/kdt/pojavlaunch/fragments/{fragment}.java")
+        source = read(path)
+        source = sub_once(
+            r"if\s*\(\s*!hasOnlineProfile\(\)\s*\)\s*\{\s*"
+            r"hasNoOnlineProfileDialog\(requireActivity\(\)\);\s*"
+            r"\}\s*else\s*\{\s*"
+            r"(?P<inner>Tools\.swapFragment\(requireActivity\(\),\s*fragmentClass,\s*tag,\s*null\);)\s*\}",
+            r"\g<inner>",
+            source, f"allow local accounts to create profiles in {fragment}",
+        )
+        source = source.replace("import static net.kdt.pojavlaunch.Tools.hasOnlineProfile;\n", "")
+        source = source.replace("import static net.kdt.pojavlaunch.Tools.hasNoOnlineProfileDialog;\n", "")
+        if re.search(r"\b(?:hasOnlineProfile|hasNoOnlineProfileDialog)\s*\(", source):
+            raise PatchError(f"{fragment} still has an online-account gate after patch")
+        write(path, source)
+
+    # LWJGL3ify's launch-time asset check must agree with MinecraftDownloader:
+    # a local account can fetch missing files when the device is online.
+    launcher_path = os.path.join(app, "src/main/java/net/kdt/pojavlaunch/LauncherActivity.java")
+    launcher = read(launcher_path)
+    launcher = sub_once(
+        r"(if\s*\(\s*!lwjgl3ifyClientJar\.exists\(\)\s*\)\s*\{\s*)"
+        r"if\s*\(\s*mAccountSpinner\.getSelectedAccount\(\)\.isLocal\(\)\s*\|\|\s*!isOnline\(this\)\s*\)",
+        r"\1if (!isOnline(this))",
+        launcher, "LWJGL3ify missing assets: allow local accounts to download when online",
+    )
+    launcher = launcher.replace(
+        "// We just installed a json, we need internet + online acc to download so we add super",
+        "// We just installed a json, we need internet to download so we add super",
+    )
+    write(launcher_path, launcher)
+
     # Let a LOCAL/offline account download game files whenever the device is
     # online. Upstream skips downloadGame() for any local profile, so an offline
     # account can never fetch a version even when the files are reachable (here,
